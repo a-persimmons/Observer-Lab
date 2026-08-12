@@ -4,7 +4,7 @@
 
 ## 在线访问
 
-[https://a-persimmons.github.io/Observer-Lab/](https://a-persimmons.github.io/Observer-Lab/)
+[https://blog.codingforjoy.com/Observer-Lab/](https://blog.codingforjoy.com/Observer-Lab/)
 
 推送到 `main` 后，GitHub Actions 会自动构建并发布 GitHub Pages。
 

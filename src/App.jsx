@@ -58,6 +58,11 @@ import {
   readWorkspaceState,
   writeWorkspaceState,
 } from "./workspaceState.js";
+import {
+  readAiSettings,
+  roleDefinitions,
+  writeAiSettings,
+} from "./aiSettingsState.js";
 
 const navItems = [
   { id: "today", label: "今日", icon: Compass },
@@ -470,22 +475,47 @@ function HistoryPage({ history, openSearch }) {
   </main>;
 }
 
-const aiRoles = [
-  ["Tutor", "导师", "逐问引导，先让你形成自己的答案"],
-  ["Coach", "教练", "安排节奏、反思与迁移训练"],
-  ["Researcher", "研究员", "比较来源并提出证据候选"],
-  ["Critic", "反方", "攻击假设、遗漏变量与证据薄弱点"],
-  ["Auditor", "审计员", "检查结构、引用与复盘质量"],
-];
-
-function SettingsPage() {
+function SettingsPage({ aiSettings, updateAiSettings, showToast }) {
   const [tab, setTab] = useState("connections");
+  const [editingConnection, setEditingConnection] = useState(null);
+  const [testingId, setTestingId] = useState("");
+  const [testResult, setTestResult] = useState(null);
+  const [selectedRoleId, setSelectedRoleId] = useState("Tutor");
+  const selectedRole = aiSettings.roles.find((role) => role.id === selectedRoleId) || aiSettings.roles[0];
+  const updateRole = (id, patch) => updateAiSettings((previous) => ({ ...previous, roles: previous.roles.map((role) => role.id === id ? { ...role, ...patch } : role) }));
+  const testConnection = async (connection) => {
+    if (!connection?.baseUrl || !connection?.apiKey) {
+      setTestResult({ id: connection?.id, status: "error", message: "请先填写 Base URL 和 API Key。" });
+      return;
+    }
+    setTestingId(connection.id); setTestResult(null);
+    try {
+      const response = await fetch(`${connection.baseUrl.replace(/\/+$/, "")}/models`, { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+      if (!response.ok) throw new Error(`服务返回 ${response.status}`);
+      setTestResult({ id: connection.id, status: "success", message: "已成功请求模型列表。" });
+    } catch (error) {
+      setTestResult({ id: connection.id, status: "error", message: `连接未通过：${error.message}。若提示跨域限制，请使用允许浏览器请求的兼容端点。` });
+    } finally { setTestingId(""); }
+  };
+  const startConnection = () => setEditingConnection({ id: createId("connection"), name: "", provider: "OpenAI-compatible", baseUrl: "", model: "", apiKey: "" });
+  const saveConnection = (event) => {
+    event.preventDefault();
+    if (!editingConnection.name.trim() || !editingConnection.baseUrl.trim()) return;
+    const connection = { ...editingConnection, name: editingConnection.name.trim(), baseUrl: editingConnection.baseUrl.trim().replace(/\/+$/, "") };
+    updateAiSettings((previous) => ({ ...previous, connections: previous.connections.some((item) => item.id === connection.id) ? previous.connections.map((item) => item.id === connection.id ? connection : item) : [connection, ...previous.connections] }));
+    setEditingConnection(null); showToast("AI 连接已保存到当前浏览器");
+  };
+  const deleteConnection = (id) => {
+    if (!window.confirm("删除这个本地 AI 连接？关联角色会变为未选择连接。")) return;
+    updateAiSettings((previous) => ({ ...previous, connections: previous.connections.filter((item) => item.id !== id), roles: previous.roles.map((role) => role.connectionId === id ? { ...role, connectionId: "", enabled: false } : role), defaultConnectionId: previous.defaultConnectionId === id ? "" : previous.defaultConnectionId }));
+    setEditingConnection(null); showToast("本地 AI 连接已删除");
+  };
   return <main className="content-page settings-page page-enter"><PageHeader eyebrow="完全由你控制" title="AI 配置" description="决定怎么连接、哪个角色使用哪个模型、发送哪些数据，以及何时允许联网。" actions={<Button variant="outline" icon={ShieldCheck}>隐私与用量</Button>}/>
     <div className="settings-tabs">{[["connections","提供商与连接"],["roles","五个 AI 角色"],["overrides","默认与覆盖"],["preview","测试与预览"]].map(([id,label])=><button key={id} className={tab===id?"active":""} onClick={()=>setTab(id)}>{label}</button>)}</div>
-    {tab==="connections"&&<section className="settings-body"><div className="settings-main"><div className="settings-section-title"><div><h2>模型提供商</h2><p>当前没有配置任何连接。</p></div></div><EmptyWorkspace icon={Key} title="尚未配置 AI 连接" description="这是 GitHub Pages 静态版：它没有加密凭据服务，因此不会收集或伪装保存 API Key，也不会伪造“连接成功”。" /></div><aside className="settings-aside"><ShieldCheck size={27}/><h3>连接安全</h3><p>接入真实模型需要受保护的服务端凭据库、用户授权和可验证的连接测试。</p></aside></section>}
-    {tab==="roles"&&<section className="role-section"><div className="settings-section-title"><div><h2>五个 AI 角色</h2><p>添加并验证真实连接后，才可以为每个角色选择模型、参数、联网与启停。</p></div></div><div className="role-table"><div className="role-table-head"><span>角色与使命</span><span>当前状态</span></div>{aiRoles.map(([id, zh, mission])=><div key={id}><div><span className={`role-icon ${id.toLowerCase()}`}><Robot size={20}/></span><strong>{id} · {zh}</strong><small>{mission}</small></div><span className="muted">等待连接配置</span></div>)}</div></section>}
-    {tab==="overrides"&&<section className="override-section"><div className="settings-section-title"><div><h2>默认与覆盖规则</h2><p>连接配置完成后，系统会按“安全规则 → 角色 → 场景 → 单次运行”显示最终生效配置。</p></div></div><EmptyWorkspace icon={SlidersHorizontal} title="还没有可覆盖的配置" description="先连接真实模型，再创建项目、课程或判断级的覆盖规则。" /></section>}
-    {tab==="preview"&&<section className="preview-section"><EmptyWorkspace icon={TestTube} title="还不能运行预览" description="预览需要真实连接和你的训练上下文。当前不会生成虚构的提示词、延迟、费用或模型结果。" /></section>}
+    {tab==="connections"&&<section className="settings-body"><div className="settings-main"><div className="settings-section-title"><div><h2>模型提供商</h2><p>连接、密钥与模型选择只保存到当前浏览器。</p></div><Button icon={Plus} onClick={startConnection}>添加连接</Button></div>{editingConnection && <form className="connection-editor" onSubmit={saveConnection}><label>连接名称<input value={editingConnection.name} onChange={(event) => setEditingConnection({ ...editingConnection, name: event.target.value })} placeholder="例如：我的 OpenAI 连接" autoFocus /></label><label>提供商<select value={editingConnection.provider} onChange={(event) => setEditingConnection({ ...editingConnection, provider: event.target.value })}><option>OpenAI-compatible</option><option>OpenRouter-compatible</option><option>自定义兼容端点</option></select></label><label>Base URL<input value={editingConnection.baseUrl} onChange={(event) => setEditingConnection({ ...editingConnection, baseUrl: event.target.value })} placeholder="https://…/v1" /></label><label>默认模型<input value={editingConnection.model} onChange={(event) => setEditingConnection({ ...editingConnection, model: event.target.value })} placeholder="例如：你的模型 ID" /></label><label className="wide">API Key<input type="password" value={editingConnection.apiKey} onChange={(event) => setEditingConnection({ ...editingConnection, apiKey: event.target.value })} placeholder="仅保存在本浏览器" autoComplete="off" /></label><div className="wide editor-actions"><Button type="button" variant="ghost" onClick={() => setEditingConnection(null)}>取消</Button>{aiSettings.connections.some((item) => item.id === editingConnection.id) && <Button type="button" variant="danger-outline" onClick={() => deleteConnection(editingConnection.id)}>删除</Button>}<Button type="submit" icon={Check}>保存本地连接</Button></div></form>}{aiSettings.connections.map((connection) => <article className="connection-card active" key={connection.id}><header><div className="provider-mark">AI</div><div><strong>{connection.name}</strong><span className="muted">{connection.provider} · {connection.model || "未设置默认模型"}</span></div><button onClick={() => setEditingConnection(connection)} aria-label={`编辑 ${connection.name}`}><GearSix size={20}/></button></header><p>{connection.baseUrl} · {connection.apiKey ? "API Key 已保存于本地" : "尚未填写 API Key"}</p><footer><span>{testResult?.id === connection.id ? testResult.message : "尚未测试此连接"}</span><Button variant="outline" icon={TestTube} onClick={() => testConnection(connection)} disabled={testingId === connection.id}>{testingId === connection.id ? "正在测试…" : "测试连接"}</Button></footer></article>)}{!aiSettings.connections.length && !editingConnection && <EmptyWorkspace icon={Key} title="尚未配置 AI 连接" description="添加一个支持 OpenAI 兼容接口的连接后，可以在下方为五个角色分别选择模型与参数。" action={<Button icon={Plus} onClick={startConnection}>添加第一个连接</Button>} />}</div><aside className="settings-aside"><ShieldCheck size={27}/><h3>本地保存说明</h3><p>API Key 以明文保存在此浏览器的站点数据中，不会上传到 GitHub。请只在个人设备使用；清除站点数据会同时删除它。</p></aside></section>}
+    {tab==="roles"&&<section className="role-section"><div className="settings-section-title"><div><h2>角色矩阵</h2><p>每个角色都有独立的连接、模型、温度、上下文、联网开关与系统提示词。</p></div></div><div className="role-table"><div className="role-table-head"><span>角色与使命</span><span>连接</span><span>模型</span><span>温度</span><span>联网</span><span>启用</span></div>{aiSettings.roles.map((role) => <div className={!role.enabled ? "disabled" : ""} key={role.id}><button className="role-details" onClick={() => setSelectedRoleId(role.id)}><span className={`role-icon ${role.id.toLowerCase()}`}><Robot size={20}/></span><span><strong>{role.id} · {role.name}</strong><small>{role.mission}</small></span></button><select value={role.connectionId} onChange={(event) => updateRole(role.id, { connectionId: event.target.value })}><option value="">未选择</option>{aiSettings.connections.map((connection) => <option value={connection.id} key={connection.id}>{connection.name}</option>)}</select><input value={role.model} onChange={(event) => updateRole(role.id, { model: event.target.value })} placeholder="模型 ID" /><input type="number" min="0" max="2" step="0.1" value={role.temperature} onChange={(event) => updateRole(role.id, { temperature: Number(event.target.value) })} /><button className={role.web ? "toggle on" : "toggle"} onClick={() => updateRole(role.id, { web: !role.web })} aria-label={`切换 ${role.id} 联网`}><span/></button><button className={role.enabled ? "toggle on" : "toggle"} onClick={() => updateRole(role.id, { enabled: !role.enabled })} aria-label={`切换 ${role.id} 启用`}><span/></button></div>)}</div>{selectedRole && <section className="role-editor"><header><div><p>编辑角色</p><h3>{selectedRole.id} · {selectedRole.name}</h3></div><label>上下文上限<input type="number" min="1000" step="1000" value={selectedRole.context} onChange={(event) => updateRole(selectedRole.id, { context: Number(event.target.value) })} /></label></header><label>该角色的系统提示词<textarea rows={5} value={selectedRole.systemPrompt} onChange={(event) => updateRole(selectedRole.id, { systemPrompt: event.target.value })} placeholder="留空时使用全局系统提示词。" /></label><p>修改会立即保存到当前浏览器。</p></section>}</section>}
+    {tab==="overrides"&&<section className="override-section"><div className="settings-section-title"><div><h2>默认与覆盖规则</h2><p>全局默认会在角色没有单独配置时生效；更具体的角色配置优先。</p></div></div><section className="default-config"><label>默认连接<select value={aiSettings.defaultConnectionId} onChange={(event) => updateAiSettings((previous) => ({ ...previous, defaultConnectionId: event.target.value }))}><option value="">不设置默认连接</option>{aiSettings.connections.map((connection) => <option value={connection.id} key={connection.id}>{connection.name}</option>)}</select></label><label>全局系统提示词<textarea rows={7} value={aiSettings.defaultSystemPrompt} onChange={(event) => updateAiSettings((previous) => ({ ...previous, defaultSystemPrompt: event.target.value }))} placeholder="例如：先追问，再给建议；区分事实、推测与判断。" /></label><p><CheckCircle size={17} weight="fill"/> 修改会立即保存到当前浏览器。角色内填写的提示词优先于这里。</p></section></section>}
+    {tab==="preview"&&<section className="preview-section"><div className="preview-controls"><label>角色<select value={selectedRoleId} onChange={(event) => setSelectedRoleId(event.target.value)}>{roleDefinitions.map(([id, name]) => <option value={id} key={id}>{id} · {name}</option>)}</select></label><Button icon={TestTube} onClick={() => selectedRole && testConnection(aiSettings.connections.find((connection) => connection.id === (selectedRole.connectionId || aiSettings.defaultConnectionId)))}>测试此角色连接</Button></div>{selectedRole && <div className="preview-columns"><article><header><strong>最终生效配置</strong><span>来自本地浏览器</span></header><dl className="config-preview"><div><dt>连接</dt><dd>{aiSettings.connections.find((connection) => connection.id === (selectedRole.connectionId || aiSettings.defaultConnectionId))?.name || "未选择"}</dd></div><div><dt>模型</dt><dd>{selectedRole.model || aiSettings.connections.find((connection) => connection.id === selectedRole.connectionId)?.model || "未设置"}</dd></div><div><dt>温度 / 上下文</dt><dd>{selectedRole.temperature} / {selectedRole.context}</dd></div><div><dt>联网</dt><dd>{selectedRole.web ? "允许" : "关闭"}</dd></div></dl></article><article><header><strong>系统提示词预览</strong><span>{selectedRole.systemPrompt ? "角色覆盖" : "全局默认"}</span></header><p className="prompt-preview">{selectedRole.systemPrompt || aiSettings.defaultSystemPrompt || "尚未设置系统提示词。"}</p></article></div>}</section>}
   </main>;
 }
 
@@ -511,6 +541,7 @@ export function App() {
   const [toast, setToast] = useState("");
   const [learningState, setLearningState] = useState(() => readLearningState(window.localStorage));
   const [workspaceState, setWorkspaceState] = useState(() => readWorkspaceState(window.localStorage));
+  const [aiSettings, setAiSettings] = useState(() => readAiSettings(window.localStorage));
   const [reviewId, setReviewId] = useState(null);
   const showToast = message => { setToast(message); window.setTimeout(()=>setToast(""),2400); };
   const updateLearningState = updater => setLearningState(previous => {
@@ -520,6 +551,10 @@ export function App() {
   const updateWorkspaceState = updater => setWorkspaceState(previous => {
     const next = typeof updater === "function" ? updater(previous) : updater;
     return writeWorkspaceState(window.localStorage, next);
+  });
+  const updateAiSettings = updater => setAiSettings(previous => {
+    const next = typeof updater === "function" ? updater(previous) : updater;
+    return writeAiSettings(window.localStorage, next);
   });
   const addHistory = (previous, item) => ({ ...previous, history: [item, ...previous.history].slice(0, 100) });
   const startTraining = () => {
@@ -581,7 +616,7 @@ export function App() {
       case "review": return <ReviewPage setPage={setPage} judgment={workspaceState.judgments.find(item => item.id === reviewId)} finishReview={finishReview}/>;
       case "insights": return <InsightsPage learningState={learningState} workspaceState={workspaceState} startTraining={startTraining}/>;
       case "history": return <HistoryPage history={workspaceState.history} openSearch={()=>setSearchOpen(true)}/>;
-      case "settings": return <SettingsPage/>;
+      case "settings": return <SettingsPage aiSettings={aiSettings} updateAiSettings={updateAiSettings} showToast={showToast}/>;
       default: return <TodayPage setPage={setPage} learningState={learningState} startTraining={startTraining}/>;
     }
   };

@@ -44,6 +44,9 @@ jobs:
         env:
           GITHUB_PAGES: "true"
 
+      - name: Verify deployment package
+        run: pnpm test:sites
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
 

@@ -48,6 +48,15 @@ import {
   researchProjects,
   roleDefaults,
 } from "./data.js";
+import {
+  buildWeekRhythm,
+  formatSnapshotDate,
+  getCourseStatus,
+  getGreeting,
+  getLocalDateKey,
+  readLearningState,
+  writeLearningState,
+} from "./learningState.js";
 
 const navItems = [
   { id: "today", label: "今日", icon: Compass },
@@ -142,59 +151,54 @@ function Button({ children, variant = "primary", icon, className = "", ...props 
   );
 }
 
-function TodayPage({ setPage }) {
-  const week = [
-    { day: "周一", date: "8/10", status: "done" },
-    { day: "周二", date: "8/11", status: "empty" },
-    { day: "周三", date: "8/12", status: "today" },
-    { day: "周四", date: "8/13", status: "empty" },
-    { day: "周五", date: "8/14", status: "empty" },
-    { day: "周六", date: "8/15", status: "empty" },
-    { day: "周日", date: "8/16", status: "empty" },
-  ];
+function TodayPage({ setPage, learningState, startTraining }) {
+  const now = new Date();
+  const week = buildWeekRhythm(now, learningState.completedTrainingDates);
+  const currentCourse = courseWeeks[learningState.currentWeek - 1];
+  const started = Boolean(learningState.startedAt);
+  const completedToday = learningState.completedTrainingDates.includes(getLocalDateKey(now));
+  const progress = Math.round((learningState.completedWeeks / courseWeeks.length) * 100);
+  const stepProgress = Math.round((learningState.currentStep / 7) * 100);
 
   return (
     <main className="today-page page-enter">
       <section className="today-hero">
         <div className="greeting-block">
-          <p className="snapshot-label">2026 年 8 月 12 日 · 周三训练快照</p>
-          <h1>晚上好，柿子。</h1>
-          <p>今天继续训练你的观察与判断。</p>
+          <p className="snapshot-label">{formatSnapshotDate(now)}</p>
+          <h1>{getGreeting(now)}，柿子。</h1>
+          <p>{started ? "今天继续训练你的观察与判断。" : "从今天开始，建立自己的观察与判断方法。"}</p>
         </div>
         <img className="observatory-art" src={`${import.meta.env.BASE_URL}assets/observatory-instrument.png`} alt="简洁的观测仪器线稿" />
       </section>
 
       <section className="program-progress" aria-label="课程进度">
-        <div><strong>第 4 周 · 核心变量</strong><span>12 周课程完成 29%</span></div>
-        <div className="progress-track"><span style={{ width: "29%" }} /></div>
+        <div><strong>第 {currentCourse.week} 周 · {currentCourse.title}</strong><span>12 周课程完成 {progress}%</span></div>
+        <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
       </section>
 
       <section className="today-focus">
         <article className="training-focus">
-          <p className="section-kicker">继续第 4 周训练</p>
-          <h2>从现象中提取核心变量</h2>
-          <p className="step-line"><strong>2 / 7</strong><span>· 收敛变量清单</span></p>
-          <div className="micro-progress"><span /></div>
-          <p className="time-estimate"><AppIcon icon={Clock} size={20} />约 24 分钟</p>
-          <Button icon={ArrowRight} onClick={() => setPage("training")}>继续训练</Button>
+          <p className="section-kicker">{completedToday ? "今日训练已完成" : started ? `继续第 ${currentCourse.week} 周训练` : `开始第 ${currentCourse.week} 周训练`}</p>
+          <h2>{currentCourse.week === 1 ? "建立你的第一张行业全景图" : currentCourse.title}</h2>
+          <p className="step-line"><strong>{learningState.currentStep} / 7</strong><span>· {started ? "当前训练进度" : "明确研究对象"}</span></p>
+          <div className="micro-progress"><span style={{ width: `${stepProgress}%` }} /></div>
+          <p className="time-estimate"><AppIcon icon={Clock} size={20} />约 30 分钟</p>
+          <Button icon={ArrowRight} onClick={startTraining}>{completedToday ? "查看训练结果" : started ? "继续训练" : "开始训练"}</Button>
         </article>
 
-        <article className="review-focus">
-          <p className="section-kicker warning-text">1 个判断等待复盘</p>
-          <h2>AI Coding 会在两年内重塑传统 IDE 的商业模式</h2>
-          <div className="review-meta">
-            <div><span>原始概率</span><strong>65%</strong></div>
-            <p><AppIcon icon={Warning} size={18} weight="fill" />已到复盘日</p>
-          </div>
-          <Button variant="danger-outline" icon={ArrowRight} onClick={() => setPage("review")}>开始复盘</Button>
+        <article className="review-focus empty-state">
+          <p className="section-kicker">暂无待复盘判断</p>
+          <h2>写下第一个可验证判断后，这里会提醒你按时回来校准。</h2>
+          <p className="empty-state-copy">不会用示例判断冒充你的记录。</p>
+          <Button variant="outline" icon={ArrowRight} onClick={() => setPage("judgments")}>创建第一个判断</Button>
         </article>
       </section>
 
       <section className="today-lower">
         <article className="observation-note">
           <AppIcon icon={Eye} size={24} />
-          <p>你最近较重视技术变量，<br />但较少检查组织阻力。</p>
-          <button className="text-link" onClick={() => setPage("insights")}>查看依据 <CaretRight size={17} /></button>
+          <p>完成几次训练后，<br />这里才会生成有依据的认知观察。</p>
+          <button className="text-link" onClick={startTraining}>{started ? "继续积累样本" : "开始第一次训练"} <CaretRight size={17} /></button>
         </article>
         <article className="weekly-rhythm">
           <h3>本周训练节奏</h3>
@@ -213,26 +217,30 @@ function TodayPage({ setPage }) {
   );
 }
 
-function LearnPage({ setPage }) {
+function LearnPage({ learningState, startTraining }) {
+  const activeStage = learningState.currentWeek <= 3 ? 0 : learningState.currentWeek <= 6 ? 1 : learningState.currentWeek <= 10 ? 2 : 3;
+  const weeks = courseWeeks.map((item) => ({ ...item, status: getCourseStatus(item.week, learningState) }));
+  const started = Boolean(learningState.startedAt);
   return (
     <main className="content-page page-enter">
       <PageHeader
         eyebrow="12 周递进课程"
         title="把观察世界变成一套稳定方法"
         description="课程不以看完内容计完成。每一周都要形成可复用产物，并迁移到你的真实研究。"
-        actions={<Button icon={ArrowRight} onClick={() => setPage("training")}>继续 Week 4</Button>}
+        actions={<Button icon={ArrowRight} onClick={startTraining}>{started ? `继续 Week ${learningState.currentWeek}` : "开始 Week 1"}</Button>}
       />
       <section className="stage-strip">
-        {stages.map((stage, index) => <div key={stage.name} className={index === 1 ? "active" : ""}><span>{stage.range}</span><strong>{stage.name}</strong><small>{stage.description}</small></div>)}
+        {stages.map((stage, index) => <div key={stage.name} className={index === activeStage ? "active" : ""}><span>{stage.range}</span><strong>{stage.name}</strong><small>{stage.description}</small></div>)}
       </section>
       <section className="course-grid">
-        {courseWeeks.map((item) => (
-          <button key={item.week} className={`course-card ${item.status}`} onClick={() => item.status !== "locked" && (item.week === 4 ? setPage("training") : null)}>
+        {weeks.map((item) => (
+          <button key={item.week} className={`course-card ${item.status}`} onClick={() => item.week === learningState.currentWeek && startTraining()}>
             <div className="course-card-top">
               <span>W{String(item.week).padStart(2, "0")}</span>
               {item.status === "done" && <CheckCircle size={22} weight="fill" />}
               {item.status === "locked" && <Lock size={18} />}
               {item.status === "active" && <span className="active-label">进行中</span>}
+              {item.status === "next" && <span className="active-label">待开始</span>}
             </div>
             <p>{item.stage}</p>
             <h3>{item.title}</h3>
@@ -242,24 +250,29 @@ function LearnPage({ setPage }) {
         ))}
       </section>
       <section className="phase-gate">
-        <div><AppIcon icon={Target} size={28} /><span><small>下一阶段挑战</small><strong>Week 6 · 看懂机制</strong></span></div>
-        <p>从一个现象构建变量树、因果网络和六视角盲区清单。</p>
-        <span>还需完成 2 周</span>
+        <div><AppIcon icon={Target} size={28} /><span><small>第一阶段挑战</small><strong>Week 3 · 看清行业</strong></span></div>
+        <p>完成行业地图、价值流地图与竞争结构图，建立观察一个行业的基本骨架。</p>
+        <span>还需完成 {Math.max(0, 3 - learningState.completedWeeks)} 周</span>
       </section>
     </main>
   );
 }
 
-function TrainingPage({ setPage, showToast }) {
-  const [phase, setPhase] = useState(0);
-  const [draft, setDraft] = useState("模型可靠性\n推理成本\n企业采购周期\n数据安全\n用户习惯\n组织流程改变");
+function TrainingPage({ setPage, showToast, learningState, updateTrainingStep, completeTraining }) {
+  const [phase, setPhase] = useState(Math.max(0, learningState.currentStep - 1));
+  const [draft, setDraft] = useState("");
   const [revision, setRevision] = useState("");
-  const steps = ["独立初答", "导师追问", "反方挑战", "修订", "审计反馈", "迁移规则", "完成"];
+  const steps = ["选择主题", "划定边界", "识别参与者", "梳理价值流", "检查遗漏", "形成地图", "完成"];
 
   const next = () => {
-    if (phase < 6) setPhase(phase + 1);
+    if (phase < 6) {
+      const nextPhase = phase + 1;
+      setPhase(nextPhase);
+      updateTrainingStep(nextPhase + 1);
+      if (nextPhase === 6) completeTraining();
+    }
     else {
-      showToast("训练已保存，核心变量树已更新");
+      showToast("训练已保存，行业地图已加入你的记录");
       setPage("research");
     }
   };
@@ -268,8 +281,8 @@ function TrainingPage({ setPage, showToast }) {
     <main className="workspace-page training-page page-enter">
       <header className="workspace-header">
         <button className="back-button" onClick={() => setPage("learn")}><ArrowLeft size={20} />课程地图</button>
-        <div><span>Week 4 · 核心变量</span><strong>从现象中提取核心变量</strong></div>
-        <p><Timer size={19} />约 24 分钟</p>
+        <div><span>Week 1 · 行业全景</span><strong>建立第一张行业地图</strong></div>
+        <p><Timer size={19} />约 30 分钟</p>
       </header>
 
       <div className="training-layout">
@@ -287,69 +300,69 @@ function TrainingPage({ setPage, showToast }) {
           <div className="training-question">
             <p className="eyebrow">步骤 {phase + 1} / 7</p>
             {phase === 0 && <>
-              <h1>哪些变量真正决定企业 AI Agent 从试点进入生产？</h1>
-              <p>先独立写下你能想到的变量。不要排序，也不要求完整；AI 会在你提交之后介入。</p>
-              <label className="field-label" htmlFor="draft">你的初稿</label>
-              <textarea id="draft" value={draft} onChange={(event) => setDraft(event.target.value)} rows={10} />
-              <div className="canvas-actions"><span>{draft.split("\n").filter(Boolean).length} 个变量 · 初稿会被原样保留</span><Button icon={ArrowRight} onClick={next}>提交初稿</Button></div>
+              <h1>你想用哪个真实行业完成这 12 周训练？</h1>
+              <p>先写下一个你确实想长期理解的行业，以及你现在最想弄清楚的问题。没有标准答案。</p>
+              <label className="field-label" htmlFor="draft">行业与核心问题</label>
+              <textarea id="draft" value={draft} onChange={(event) => setDraft(event.target.value)} rows={10} placeholder="例如：AI Coding。核心问题：价值会从传统 IDE 迁移到哪里？" />
+              <div className="canvas-actions"><span>{draft.trim() ? "这会成为你的训练主题" : "先写下真实主题再继续"}</span><Button icon={ArrowRight} onClick={next} disabled={!draft.trim()}>确定主题</Button></div>
             </>}
             {phase === 1 && <>
-              <h1>先收敛“结果变量”与“驱动变量”</h1>
-              <div className="ai-note tutor"><span><GraduationCap size={22} weight="fill" />Tutor · 导师</span><p>你列出的“进入生产”本身是结果。若只能保留三个最能解释差异的驱动变量，你会保留哪三个？为什么？</p></div>
+              <h1>先把行业边界说清楚</h1>
+              <div className="ai-note tutor"><span><GraduationCap size={22} weight="fill" />Tutor · 导师</span><p>一个可研究的行业需要说明服务谁、解决什么问题、由谁付钱，以及哪些相邻领域暂时不纳入。</p></div>
               <div className="selection-list">
-                {["模型可靠性", "推理成本", "企业采购周期", "数据安全", "用户习惯", "组织流程改变"].map((item, index) => <label key={item}><input type="checkbox" defaultChecked={[0,2,5].includes(index)} /> <span>{item}</span></label>)}
+                {["谁在使用", "谁在付钱", "解决什么问题", "地域范围", "时间范围", "暂不包含什么"].map((item, index) => <label key={item}><input type="checkbox" defaultChecked={index < 3} /> <span>{item}</span></label>)}
               </div>
-              <div className="canvas-actions"><button className="text-link">查看方法卡：核心变量</button><Button icon={ArrowRight} onClick={next}>确认选择</Button></div>
+              <div className="canvas-actions"><button className="text-link">查看方法卡：问题边界</button><Button icon={ArrowRight} onClick={next}>确认边界</Button></div>
             </>}
             {phase === 2 && <>
-              <h1>如果你的变量清单是错的，最可能错在哪里？</h1>
+              <h1>谁参与其中，谁真正拥有决定权？</h1>
               <div className="ai-note critic"><span><ShieldCheck size={22} weight="fill" />Critic · 反方</span>
-                <ol><li><strong>低估组织责任：</strong>可靠性达到阈值，不代表业务负责人愿意承担失败责任。</li><li><strong>混淆成本：</strong>推理成本可能不是主要约束，集成和流程重构成本更难下降。</li><li><strong>遗漏购买结构：</strong>使用者认可并不等于安全、法务和采购通过。</li></ol>
+                <ol><li><strong>不要只看产品提供者：</strong>用户、付费者和受益者可能不是同一个人。</li><li><strong>检查上下游：</strong>基础设施、渠道和替代方案会改变行业边界。</li><li><strong>寻找门槛角色：</strong>有些参与者不直接使用产品，却能决定它能否被购买。</li></ol>
               </div>
               <div className="challenge-disposition">
-                <label><span>组织责任</span><select defaultValue="accept"><option value="accept">接受</option><option>部分接受</option><option>拒绝</option><option>待调查</option></select></label>
-                <label><span>成本定义</span><select defaultValue="partial"><option>接受</option><option value="partial">部分接受</option><option>拒绝</option><option>待调查</option></select></label>
-                <label><span>购买结构</span><select defaultValue="investigate"><option>接受</option><option>部分接受</option><option>拒绝</option><option value="investigate">待调查</option></select></label>
+                <label><span>用户与付费者</span><select defaultValue="accept"><option value="accept">已区分</option><option>待补充</option><option>不适用</option></select></label>
+                <label><span>上下游参与者</span><select defaultValue="partial"><option>已区分</option><option value="partial">待补充</option><option>不适用</option></select></label>
+                <label><span>替代方案</span><select defaultValue="investigate"><option>已区分</option><option value="investigate">待调查</option><option>不适用</option></select></label>
               </div>
-              <div className="canvas-actions"><span>你的处理理由会进入长期偏差分析</span><Button icon={ArrowRight} onClick={next}>完成挑战</Button></div>
+              <div className="canvas-actions"><span>先标记缺口，不要求一次补全</span><Button icon={ArrowRight} onClick={next}>保存参与者清单</Button></div>
             </>}
             {phase === 3 && <>
-              <h1>根据挑战，修订你的核心变量</h1>
-              <div className="compare-drafts"><div><span>冻结的初稿</span><pre>{draft}</pre></div><div><span>修订版本</span><textarea rows={10} value={revision || "模型可靠性与人工接管率\n集成与流程重构总成本\n跨部门责任与采购通过周期\n可量化的业务 ROI"} onChange={(e) => setRevision(e.target.value)} /></div></div>
-              <label className="field-label">你为什么改变？</label><input className="text-input" defaultValue="我原来把技术成本看得太重，低估了组织责任和跨部门购买结构。" />
-              <div className="canvas-actions"><span>初稿不会被覆盖</span><Button icon={ArrowRight} onClick={next}>保存修订</Button></div>
+              <h1>钱从哪里来，价值流向哪里？</h1>
+              <div className="compare-drafts"><div><span>你选择的主题</span><pre>{draft}</pre></div><div><span>价值流草图</span><textarea rows={10} value={revision} placeholder="谁付钱 → 向谁购买 → 得到什么价值\n谁承担主要成本 → 谁获得主要收益" onChange={(e) => setRevision(e.target.value)} /></div></div>
+              <label className="field-label">当前最不确定的一环</label><input className="text-input" placeholder="例如：最终预算由业务部门还是 IT 部门承担？" />
+              <div className="canvas-actions"><span>主题原文会保留</span><Button icon={ArrowRight} onClick={next} disabled={!revision.trim()}>保存价值流</Button></div>
             </>}
             {phase === 4 && <>
-              <h1>这份变量清单已经达到本课门槛</h1>
+              <h1>用完整性清单检查你的行业地图</h1>
               <div className="audit-grid">
-                {[['结构覆盖','4 / 5','补充外部政策变量'],['优先级','5 / 5','已从 6 项收敛到 4 项'],['因果机制','3 / 5','下一课继续训练'],['反证质量','4 / 5','处理理由具体']].map(([a,b,c])=><div key={a}><span>{a}</span><strong>{b}</strong><small>{c}</small></div>)}
+                {[["目标用户","已检查","谁使用、谁受益"],["付费角色","已检查","谁掌握预算"],["上下游","待验证","供应与渠道"],["替代方案","待验证","用户还能怎么解决"]].map(([a,b,c])=><div key={a}><span>{a}</span><strong>{b}</strong><small>{c}</small></div>)}
               </div>
-              <div className="ai-note auditor"><span><ShieldCheck size={22} />Auditor · 审计员</span><p>你的最大进步是把“推理成本”改写为“集成与流程重构总成本”。仍需验证：在不同规模企业中，责任归属是否同样构成核心约束。</p></div>
-              <div className="canvas-actions"><span>评分依据可下钻到具体作答</span><Button icon={ArrowRight} onClick={next}>继续</Button></div>
+              <div className="ai-note auditor"><span><ShieldCheck size={22} />Auditor · 审计员</span><p>首次地图不追求完整。只要明确已知部分和待验证缺口，它就可以作为后续研究的起点。</p></div>
+              <div className="canvas-actions"><span>系统不会用示例分数评价你</span><Button icon={ArrowRight} onClick={next}>继续</Button></div>
             </>}
             {phase === 5 && <>
-              <h1>把今天的方法迁移到下一次观察</h1>
-              <p>用一句话写下你希望下次自动想起的规则。</p>
-              <textarea rows={6} defaultValue="看到技术采用问题时，不只问技术是否可用，还要检查：谁承担失败责任、谁批准预算、现有流程需要改变多少。" />
-              <div className="method-summary"><Sparkle size={24} /><div><strong>你的迁移规则会进入个人判断手册</strong><p>Coach 会在相似训练中适时提醒，但不会直接代替你分析。</p></div></div>
-              <div className="canvas-actions"><span>可随时在洞察中修改</span><Button icon={ArrowRight} onClick={next}>保存规则</Button></div>
+              <h1>把零散信息整理成第一张行业地图</h1>
+              <p>用自己的话总结：这个行业为谁解决什么问题，谁付钱，主要参与者是谁。</p>
+              <textarea rows={6} placeholder="这个行业服务……；核心问题是……；付费者是……；主要参与者包括……；当前最大的未知是……" />
+              <div className="method-summary"><Sparkle size={24} /><div><strong>这张地图会成为后续 11 周的共同底稿</strong><p>以后补充事实时追加版本，不会覆盖你今天的原始理解。</p></div></div>
+              <div className="canvas-actions"><span>可以不完美，但必须是你的答案</span><Button icon={ArrowRight} onClick={next}>完成第一课</Button></div>
             </>}
             {phase === 6 && <>
-              <div className="completion-panel"><CheckCircle size={48} weight="thin" /><p className="eyebrow">本次训练完成</p><h1>你把“技术可用”推进到了“组织可采用”</h1><p>核心变量树已生成新版本；新增 1 条认知观察和 2 个待验证问题。</p></div>
-              <div className="completion-delta"><div><span>开始时</span><p>6 个平铺变量，技术因素占 4 个</p></div><ArrowRight size={24}/><div><span>现在</span><p>4 个核心变量，覆盖技术、成本、组织与价值</p></div></div>
-              <div className="canvas-actions"><button className="text-link" onClick={() => setPage("today")}>返回今日</button><Button icon={MapTrifold} onClick={next}>查看研究画布</Button></div>
+              <div className="completion-panel"><CheckCircle size={48} weight="thin" /><p className="eyebrow">第一次训练完成</p><h1>你的行业全景训练已经开始</h1><p>今天的主题、边界、参与者与价值流已经保存为第一版训练记录。</p></div>
+              <div className="completion-delta"><div><span>开始时</span><p>一个想了解的行业</p></div><ArrowRight size={24}/><div><span>现在</span><p>一张带有明确缺口的行业地图</p></div></div>
+              <div className="canvas-actions"><button className="text-link" onClick={() => setPage("today")}>返回今日</button><Button icon={MapTrifold} onClick={next}>创建研究项目</Button></div>
             </>}
           </div>
         </section>
 
         <aside className="context-panel">
           <div className="context-tabs"><button className="active">上下文</button><button>方法</button></div>
-          <p className="context-title">当前研究</p><strong>企业 AI Agent 的生产化拐点</strong>
-          <div className="context-stat"><span>相关证据</span><strong>24</strong></div>
-          <div className="context-stat"><span>待核验</span><strong>4</strong></div>
+          <p className="context-title">当前研究</p><strong>尚未绑定研究项目</strong>
+          <div className="context-stat"><span>相关证据</span><strong>0</strong></div>
+          <div className="context-stat"><span>待核验</span><strong>0</strong></div>
           <div className="context-divider" />
           <p className="context-title">AI 介入记录</p>
-          <ul><li>你的独立初稿已冻结</li><li>Tutor 仅提供追问</li><li>Critic 在初稿后介入</li></ul>
+          <ul><li>你的答案先于 AI 建议</li><li>Tutor 仅提供结构化追问</li><li>示例内容不会计入个人画像</li></ul>
           <button className="context-config" onClick={() => setPage("settings")}><Robot size={19}/>本次 AI 配置<CaretRight size={16}/></button>
         </aside>
       </div>
@@ -480,18 +493,42 @@ export function App() {
   const [page, setPage] = useState("today");
   const [searchOpen, setSearchOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const [learningState, setLearningState] = useState(() => readLearningState(window.localStorage));
   const showToast = message => { setToast(message); window.setTimeout(()=>setToast(""),2400); };
+  const updateLearningState = updater => setLearningState(previous => {
+    const next = typeof updater === "function" ? updater(previous) : updater;
+    return writeLearningState(window.localStorage, next);
+  });
+  const startTraining = () => {
+    updateLearningState(previous => ({
+      ...previous,
+      startedAt: previous.startedAt || new Date().toISOString(),
+      currentStep: Math.max(1, previous.currentStep),
+    }));
+    setPage("training");
+  };
+  const updateTrainingStep = currentStep => updateLearningState(previous => ({ ...previous, currentStep }));
+  const completeTraining = () => updateLearningState(previous => {
+    const today = getLocalDateKey();
+    return {
+      ...previous,
+      currentStep: 7,
+      completedTrainingDates: previous.completedTrainingDates.includes(today)
+        ? previous.completedTrainingDates
+        : [...previous.completedTrainingDates, today],
+    };
+  });
   const renderPage = () => {
     switch(page) {
-      case "learn": return <LearnPage setPage={setPage}/>;
-      case "training": return <TrainingPage setPage={setPage} showToast={showToast}/>;
+      case "learn": return <LearnPage learningState={learningState} startTraining={startTraining}/>;
+      case "training": return <TrainingPage setPage={setPage} showToast={showToast} learningState={learningState} updateTrainingStep={updateTrainingStep} completeTraining={completeTraining}/>;
       case "research": return <ResearchPage showToast={showToast}/>;
       case "judgments": return <JudgmentsPage setPage={setPage} showToast={showToast}/>;
       case "review": return <ReviewPage setPage={setPage} showToast={showToast}/>;
       case "insights": return <InsightsPage/>;
       case "history": return <HistoryPage openSearch={()=>setSearchOpen(true)} showToast={showToast}/>;
       case "settings": return <SettingsPage showToast={showToast}/>;
-      default: return <TodayPage setPage={setPage}/>;
+      default: return <TodayPage setPage={setPage} learningState={learningState} startTraining={startTraining}/>;
     }
   };
   return <div className="app-shell"><Sidebar page={page} setPage={setPage} openSearch={()=>setSearchOpen(true)}/><div className="mobile-header"><button className="brand" onClick={()=>setPage("today")}><span>Observer Lab</span><small>观察者训练场</small></button><div><button onClick={()=>setSearchOpen(true)}><MagnifyingGlass size={21}/></button><button onClick={()=>setPage("settings")}><GearSix size={21}/></button></div></div><div className="app-content">{renderPage()}</div><MobileNav page={page} setPage={setPage}/>{searchOpen&&<SearchOverlay onClose={()=>setSearchOpen(false)} setPage={setPage}/>} {toast&&<Toast message={toast}/>}</div>;
